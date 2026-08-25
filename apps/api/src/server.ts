@@ -8,6 +8,7 @@ import path from "path";
 
 const app = Fastify({
   logger: true,
+  bodyLimit: 50 * 1024 * 1024, // 50 MB
 });
 
 app.register(cors, {

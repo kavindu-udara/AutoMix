@@ -1,28 +1,36 @@
 import { FastifyPluginAsync } from "fastify";
-import path from "path";
-import fs from "fs/promises";
-import { pipeline } from "stream/promises";
-import { createWriteStream } from "fs";
-import { getTracks, saveTrack, Track } from "../store/tracks";
-import { storageService } from "../storage";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+
+import { storageService as storage } from "../storage";
+import { db } from "../db";
+import { queueTrackAnalysis } from "../queue/analysis.queue";
 
 const TMP_DIR = path.resolve(process.env.TMP_DIR ?? "./tmp");
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 const ALLOWED_MIME_TYPES = new Set([
   "audio/mpeg",
+  "audio/mp3",
   "audio/wav",
   "audio/x-wav",
-  "audio/mp3",
+  "audio/wave",
+  "audio/mp4",
+  "audio/x-m4a",
 ]);
 
-const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav", ".mpeg"]);
+const ALLOWED_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".m4a",
+]);
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const trackRoutes: FastifyPluginAsync = async (app) => {
-  app.post(
-    "/api/tracks/upload",
-    { bodyLimit: MAX_FILE_SIZE_BYTES },
-    async (req, reply) => {
+  app.post("/api/tracks/upload", async (req, reply) => {
     let tempPath: string | null = null;
 
     try {
@@ -53,7 +61,9 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
-      await fs.mkdir(TMP_DIR, { recursive: true });
+      await fs.mkdir(TMP_DIR, {
+        recursive: true,
+      });
 
       const id = crypto.randomUUID();
       const safeTempName = `${id}${ext}`;
@@ -94,7 +104,7 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
 
       const storageKey = `tracks/${id}${ext}`;
 
-      await storageService.saveFile({
+      await storage.saveFile({
         key: storageKey,
         filePath: tempPath,
         contentType: file.mimetype,
@@ -103,24 +113,56 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
       await fs.unlink(tempPath).catch(() => {});
       tempPath = null;
 
-      const url = await storageService.getSignedUrl(storageKey, 3600);
+      const track = await db.track.create({
+        data: {
+          id,
+          originalFileName,
+          storageKey,
+          mimeType: file.mimetype,
+          sizeBytes: stats.size,
+          durationSec,
+          status: "uploaded",
+        },
+      });
 
-      const track: Track = {
-        id,
-        originalFileName,
-        storageKey,
-        mimeType: file.mimetype,
-        sizeBytes: stats.size,
-        durationSec,
-        status: "uploaded" as const,
-        createdAt: new Date().toISOString(),
-      };
+      try {
+        await db.track.update({
+          where: {
+            id: track.id,
+          },
+          data: {
+            status: "queued",
+            updatedAt: new Date(),
+          },
+        });
 
-      saveTrack(track);
+        await queueTrackAnalysis(track.id);
+      } catch (err) {
+        await db.track.update({
+          where: {
+            id: track.id,
+          },
+          data: {
+            status: "failed",
+            error: "Failed to queue analysis job",
+            updatedAt: new Date(),
+          },
+        });
+
+        throw err;
+      }
+
+      const url = await storage.getSignedUrl(storageKey, 3600);
+
+      const savedTrack = await db.track.findUniqueOrThrow({
+        where: {
+          id: track.id,
+        },
+      });
 
       return reply.code(201).send({
         track: {
-          ...track,
+          ...savedTrack,
           url,
         },
       });
@@ -135,25 +177,87 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
         error: "Upload failed",
       });
     }
-    },
-  );
+  });
 
   app.get("/api/tracks", async () => {
-    const tracks = getTracks();
+    const tracks = await db.track.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
     const tracksWithUrl = await Promise.all(
       tracks.map(async (track) => {
-        const url = await storageService.getSignedUrl(track.storageKey, 3600);
+        const url = await storage.getSignedUrl(
+          track.storageKey,
+          3600
+        );
 
         return {
           ...track,
           url,
         };
-      }),
+      })
     );
 
     return {
       tracks: tracksWithUrl,
+    };
+  });
+
+  app.get("/api/tracks/:id", async (req, reply) => {
+    const params = req.params as {
+      id: string;
+    };
+
+    const track = await db.track.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
+
+    if (!track) {
+      return reply.code(404).send({
+        error: "Track not found",
+      });
+    }
+
+    const url = await storage.getSignedUrl(track.storageKey, 3600);
+
+    return {
+      track: {
+        ...track,
+        url,
+      },
+    };
+  });
+
+  app.get("/api/tracks/:id/status", async (req, reply) => {
+    const params = req.params as {
+      id: string;
+    };
+
+    const track = await db.track.findUnique({
+      where: {
+        id: params.id,
+      },
+      select: {
+        id: true,
+        status: true,
+        bpm: true,
+        error: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!track) {
+      return reply.code(404).send({
+        error: "Track not found",
+      });
+    }
+
+    return {
+      track,
     };
   });
 };
