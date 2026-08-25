@@ -4,6 +4,6 @@
 
 [x] Phase 3: Add file uploads
 
-[ ] Phase 4: Add storage layer
+[x] Phase 4: Add storage layer
 
 [ ] Phase 5: Create job queue
