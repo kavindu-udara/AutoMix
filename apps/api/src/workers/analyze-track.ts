@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { db } from "../db";
-import { storage } from "../storage";
+import { storageService as storage } from "../storage/index";
 import { runStabAnalysis } from "../analysis/stub";
 import type { AnalysisJobPayload } from "../queue/analysis.queue";
 
@@ -38,7 +38,7 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
   try {
     await storage.downloadToFile(track.storageKey, tempAudioPath);
 
-    const analysis = await runStubAnalysis({
+    const analysis = await runStabAnalysis({
       filePath: tempAudioPath,
       durationSec: track.durationSec,
     });
@@ -60,19 +60,24 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
       trackId: track.id,
       bpm: analysis.bpm,
     };
-  } catch (error) {
+  } catch (error) { 
+    console.error("analysis error:", error);
+
     await db.track.update({
       where: {
         id: track.id,
       },
       data: {
         status: "failed",
-        error: err instanceof Error ? err.message : "Analysis failed",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Analysis failed",
         updatedAt: new Date(),
       },
     });
 
-    throw err;
+    throw error; // 👈 Throw the same variable
   } finally {
     await fs.unlink(tempAudioPath).catch(() => {});
   }
