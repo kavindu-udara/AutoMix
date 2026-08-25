@@ -1,5 +1,3 @@
-// apps/api/src/routes/tracks.ts
-
 import { FastifyPluginAsync } from "fastify";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
