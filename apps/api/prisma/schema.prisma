@@ -19,4 +19,31 @@ model Track {
   error            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  mixes            MixTrack[]
+}
+
+model Mix {
+  id           String     @id @default(cuid())
+  name         String     @default("Untitled Mix")
+  status       String     @default("planning") // planning, planned, rendering, completed, failed
+  targetBpm    Float?
+  planJson     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  
+  tracks       MixTrack[]
+}
+
+model MixTrack {
+  id        String   @id @default(cuid())
+  mixId     String
+  trackId   String
+  order     Int
+  
+  mix       Mix      @relation(fields: [mixId], references: [id], onDelete: Cascade)
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([mixId, trackId])
+  @@index([mixId, order])
 }
