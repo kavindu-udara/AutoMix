@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { db } from "../db";
 import { storageService as storage } from "../storage/index";
+import {analyzeAudioFile} from "../analysis/analyzer-client";
 import { runStabAnalysis } from "../analysis/stub";
 import type { AnalysisJobPayload } from "../queue/analysis.queue";
 
@@ -38,10 +39,7 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
   try {
     await storage.downloadToFile(track.storageKey, tempAudioPath);
 
-    const analysis = await runStabAnalysis({
-      filePath: tempAudioPath,
-      durationSec: track.durationSec,
-    });
+    const analysis = await analyzeAudioFile(tempAudioPath);
 
     await db.track.update({
       where: {
@@ -50,6 +48,7 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
       data: {
         status: "analyzed",
         bpm: analysis.bpm,
+        durationSec: analysis.durationSec ?? track.durationSec,
         analysisJson: JSON.stringify(analysis),
         error: null,
         updatedAt: new Date(),
