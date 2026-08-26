@@ -1,6 +1,8 @@
 import { FastifyPluginAsync } from "fastify";
 import { db } from "../db";
 import { createMixPlan } from "../mixing/planner";
+import { queueMixRendering } from "../queue/render.queue";
+import { storageService as storage } from "../storage";
 
 export const mixRoutes: FastifyPluginAsync = async (app) => {
   // 1. Create a new mix
@@ -103,4 +105,36 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
 
     return { mix: updatedMix, plan };
   });
+
+
+    // 4. Trigger Rendering
+    app.post("/api/mixes/:mixId/render", async (req, reply) => {
+      const { mixId } = req.params as { mixId: string };
+
+      const mix = await db.mix.findUnique({ where: { id: mixId } });
+      if (!mix || mix.status !== "planned") {
+        return reply.code(400).send({
+          error: "Mix must be in 'planned' status to render.",
+        });
+      }
+
+      await queueMixRendering(mixId);
+
+      return { message: "Rendering queued", mixId };
+    });
+
+    // 5. Get Rendered Audio URL
+    app.get("/api/mixes/:mixId/audio", async (req, reply) => {
+      const { mixId } = req.params as { mixId: string };
+
+      const mix = await db.mix.findUnique({ where: { id: mixId } });
+      if (!mix || !mix.outputStorageKey) {
+        return reply
+          .code(404)
+          .send({ error: "Rendered audio not found or still processing." });
+      }
+
+      const url = await storage.getSignedUrl(mix.outputStorageKey, 3600);
+      return { url, status: mix.status };
+    });
 };

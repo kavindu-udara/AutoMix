@@ -29,9 +29,12 @@ model Mix {
   status       String     @default("planning") // planning, planned, rendering, completed, failed
   targetBpm    Float?
   planJson     String?
+
+  outputStorageKey String?
+  renderError      String?
+
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  
   tracks       MixTrack[]
 }
 

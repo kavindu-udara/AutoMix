@@ -1,6 +1,7 @@
 {
   "name": "@automix/api",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "worker": "tsx watch src/worker.ts"
@@ -12,6 +13,7 @@
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.9.1",
     "axios": "^1.19.0",
+    "execa": "^10.0.1",
     "form-data": "^4.0.6",
     "pg": "^8.23.0"
   }

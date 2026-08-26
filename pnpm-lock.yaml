@@ -81,6 +81,9 @@ importers:
       axios:
         specifier: ^1.19.0
         version: 1.19.0
+      execa:
+        specifier: ^10.0.1
+        version: 10.0.1
       form-data:
         specifier: ^4.0.6
         version: 4.0.6
