@@ -5,6 +5,7 @@ import multipart from "@fastify/multipart";
 import { trackRoutes } from "./routes/tracks";
 import fastifyStatic from "@fastify/static";
 import path from "path";
+import { mixRoutes } from "./routes/mixes";
 
 const app = Fastify({
   logger: true,
@@ -42,6 +43,7 @@ if(storageDriver === "local"){
 }
 
 app.register(trackRoutes);
+app.register(mixRoutes);
 
 const PORT = process.env.PORT || 4000;
 
