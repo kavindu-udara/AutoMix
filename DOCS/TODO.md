@@ -6,4 +6,10 @@
 
 [x] Phase 4: Add storage layer
 
-[ ] Phase 5: Create job queue
+[x] Phase 5: Create job queue
+
+[x] Phase 6: Real audio analysis
+
+[x] Phase 7: The Transition Planner (The "AutoMix Brain")
+
+[ ] Phase 8: Audio Rendering (FFmpeg)
