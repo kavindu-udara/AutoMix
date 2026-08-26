@@ -1,6 +1,7 @@
 {
   "name": "@automix/api",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "worker": "tsx watch src/worker.ts"
