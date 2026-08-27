@@ -1,15 +1,17 @@
 import { FastifyPluginAsync } from "fastify";
 import { db } from "../db";
-import { createMixPlan } from "../mixing/planner";
+import { createMultiTrackMixPlan } from "../mixing/planner";
 import { queueMixRendering } from "../queue/render.queue";
 import { storageService as storage } from "../storage";
 
 export const mixRoutes: FastifyPluginAsync = async (app) => {
   // 1. Create a new mix
   app.post("/api/mixes", async (req, reply) => {
+    const { name } = req.body as { name?: string };
+
     const mix = await db.mix.create({
       data: {
-        name: "My Automix",
+        name: name ?? "Untitled Mix",
       },
     });
 
@@ -21,7 +23,6 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
     const { mixId } = req.params as { mixId: string };
     const { trackId } = req.body as { trackId: string };
 
-    // Find current max order
     const lastTrack = await db.mixTrack.findFirst({
       where: { mixId },
       orderBy: { order: "desc" },
@@ -40,7 +41,55 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ mixTrack });
   });
 
-  // 3. Generate the Mix Plan
+  // 3. Remove a track from the mix
+  app.delete("/api/mixes/:mixId/tracks/:trackId", async (req, reply) => {
+    const { mixId, trackId } = req.params as {
+      mixId: string;
+      trackId: string;
+    };
+
+    await db.mixTrack.deleteMany({
+      where: { mixId, trackId },
+    });
+
+    // Re-order remaining tracks
+    const remaining = await db.mixTrack.findMany({
+      where: { mixId },
+      orderBy: { order: "asc" },
+    });
+
+    for (let i = 0; i < remaining.length; i++) {
+      await db.mixTrack.update({
+        where: { id: remaining[i].id },
+        data: { order: i + 1 },
+      });
+    }
+
+    return { success: true };
+  });
+
+  // 4. Get mix with tracks
+  app.get("/api/mixes/:mixId", async (req, reply) => {
+    const { mixId } = req.params as { mixId: string };
+
+    const mix = await db.mix.findUnique({
+      where: { id: mixId },
+      include: {
+        tracks: {
+          orderBy: { order: "asc" },
+          include: { track: true },
+        },
+      },
+    });
+
+    if (!mix) {
+      return reply.code(404).send({ error: "Mix not found" });
+    }
+
+    return { mix };
+  });
+
+  // 5. Generate the mix plan (supports N tracks)
   app.post("/api/mixes/:mixId/plan", async (req, reply) => {
     const { mixId } = req.params as { mixId: string };
 
@@ -56,44 +105,29 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    // For MVP, we only plan the transition between the first two tracks
-    const trackAData = mixTracks[0].track;
-    const trackBData = mixTracks[1].track;
-
-    if (
-      !trackAData.analysisJson ||
-      !trackBData.analysisJson ||
-      !trackAData.bpm ||
-      !trackBData.bpm ||
-      !trackAData.durationSec ||
-      !trackBData.durationSec
-    ) {
-      return reply.code(400).send({
-        error: "Both tracks must be fully analyzed before planning.",
-      });
+    // Verify all tracks are analyzed
+    for (const mt of mixTracks) {
+      if (!mt.track.analysisJson || !mt.track.bpm || !mt.track.durationSec) {
+        return reply.code(400).send({
+          error: `Track "${mt.track.originalFileName}" is not fully analyzed yet.`,
+        });
+      }
     }
 
-    const analysisA = JSON.parse(trackAData.analysisJson);
-    const analysisB = JSON.parse(trackBData.analysisJson);
+    // Build analysis array for the planner
+    const analyses = mixTracks.map((mt) => {
+      const parsed = JSON.parse(mt.track.analysisJson!);
+      return {
+        id: mt.track.id,
+        durationSec: mt.track.durationSec!,
+        bpm: mt.track.bpm!,
+        beats: parsed.beats ?? [],
+        downbeats: parsed.downbeats ?? [],
+      };
+    });
 
-    const plan = createMixPlan(
-      {
-        id: trackAData.id,
-        durationSec: trackAData.durationSec,
-        bpm: trackAData.bpm,
-        beats: analysisA.beats,
-        downbeats: analysisA.downbeats,
-      },
-      {
-        id: trackBData.id,
-        durationSec: trackBData.durationSec,
-        bpm: trackBData.bpm,
-        beats: analysisB.beats,
-        downbeats: analysisB.downbeats,
-      },
-    );
+    const plan = createMultiTrackMixPlan(analyses);
 
-    // Save the plan to the database
     const updatedMix = await db.mix.update({
       where: { id: mixId },
       data: {
@@ -106,35 +140,37 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
     return { mix: updatedMix, plan };
   });
 
+  // 6. Trigger rendering
+  app.post("/api/mixes/:mixId/render", async (req, reply) => {
+    const { mixId } = req.params as { mixId: string };
 
-    // 4. Trigger Rendering
-    app.post("/api/mixes/:mixId/render", async (req, reply) => {
-      const { mixId } = req.params as { mixId: string };
+    const mix = await db.mix.findUnique({ where: { id: mixId } });
 
-      const mix = await db.mix.findUnique({ where: { id: mixId } });
-      if (!mix || mix.status !== "planned") {
-        return reply.code(400).send({
-          error: "Mix must be in 'planned' status to render.",
-        });
-      }
+    if (!mix || mix.status !== "planned") {
+      return reply.code(400).send({
+        error: "Mix must be in 'planned' status to render.",
+      });
+    }
 
-      await queueMixRendering(mixId);
+    await queueMixRendering(mixId);
 
-      return { message: "Rendering queued", mixId };
-    });
+    return { message: "Rendering queued", mixId };
+  });
 
-    // 5. Get Rendered Audio URL
-    app.get("/api/mixes/:mixId/audio", async (req, reply) => {
-      const { mixId } = req.params as { mixId: string };
+  // 7. Get rendered audio URL
+  app.get("/api/mixes/:mixId/audio", async (req, reply) => {
+    const { mixId } = req.params as { mixId: string };
 
-      const mix = await db.mix.findUnique({ where: { id: mixId } });
-      if (!mix || !mix.outputStorageKey) {
-        return reply
-          .code(404)
-          .send({ error: "Rendered audio not found or still processing." });
-      }
+    const mix = await db.mix.findUnique({ where: { id: mixId } });
 
-      const url = await storage.getSignedUrl(mix.outputStorageKey, 3600);
-      return { url, status: mix.status };
-    });
+    if (!mix || !mix.outputStorageKey) {
+      return reply.code(404).send({
+        error: "Rendered audio not found or still processing.",
+      });
+    }
+
+    const url = await storage.getSignedUrl(mix.outputStorageKey, 3600);
+
+    return { url, status: mix.status };
+  });
 };
