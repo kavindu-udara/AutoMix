@@ -3,6 +3,7 @@
 import { addTrackToMix, createMix, generatePlan, getMixAudioUrl, getTracks, Track, triggerRender, uploadTrack } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 import MixPlayer from "./mix-player";
+import { PipelineStatus } from "./pipeline-status";
 
 type MixStatus =
     | "idle"
@@ -206,6 +207,7 @@ const MixBuilder = () => {
                     {mixStatus === "error" && "❌ Failed — Try Again"}
                 </button>
 
+<PipelineStatus status={mixStatus} />
                 {errorMessage && (
                     <p className="text-sm text-red-600 text-center">{errorMessage}</p>
                 )}
