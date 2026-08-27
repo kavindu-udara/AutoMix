@@ -1,5 +1,3 @@
-// apps/api/src/mixing/types.ts
-
 export interface MixPlanSegment {
   trackId: string;
   type: "outgoing" | "incoming" | "middle";
