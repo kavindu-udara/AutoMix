@@ -14,4 +14,4 @@
 
 [x] Phase 8: Audio Rendering (FFmpeg)
 
-[ ] Phase 9: Frontend Player & Waveforms.
+[x] Phase 9: Frontend Player & Waveforms.
