@@ -12,4 +12,6 @@
 
 [x] Phase 7: The Transition Planner (The "AutoMix Brain")
 
-[ ] Phase 8: Audio Rendering (FFmpeg)
+[x] Phase 8: Audio Rendering (FFmpeg)
+
+[ ] Phase 9: Frontend Player & Waveforms.
