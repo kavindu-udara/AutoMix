@@ -1,9 +1,17 @@
 "use client";
 
-import { addTrackToMix, createMix, generatePlan, getMixAudioUrl, getTracks, Track, triggerRender, uploadTrack } from "@/lib/api";
-import { useCallback, useEffect, useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import {
+    Track,
+    getTracks,
+    uploadTrack,
+    createMix,
+    addTrackToMix,
+    generatePlan,
+    triggerRender,
+    getMixAudioUrl,
+} from "@/lib/api";
 import MixPlayer from "./mix-player";
-import { PipelineStatus } from "./pipeline-status";
 
 type MixStatus =
     | "idle"
@@ -13,17 +21,16 @@ type MixStatus =
     | "done"
     | "error";
 
-const MixBuilder = () => {
-
+export function MixBuilder() {
     const [tracks, setTracks] = useState<Track[]>([]);
-    const [selectedA, setSelectedA] = useState<string | null>(null);
-    const [selectedB, setSelectedB] = useState<string | null>(null);
+    const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
     const [mixStatus, setMixStatus] = useState<MixStatus>("idle");
     const [mixAudioUrl, setMixAudioUrl] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
 
-    // Load tracks
+    // ── Load tracks ─────────────────────────────────────
+
     const loadTracks = useCallback(async () => {
         try {
             const data = await getTracks();
@@ -33,10 +40,11 @@ const MixBuilder = () => {
         }
     }, []);
 
-    // Poll for analyzed tracks
     useEffect(() => {
         loadTracks();
     }, [loadTracks]);
+
+    // ── Poll for analyzed tracks ────────────────────────
 
     useEffect(() => {
         const hasPending = tracks.some((t) =>
@@ -49,7 +57,8 @@ const MixBuilder = () => {
         return () => clearInterval(interval);
     }, [tracks, loadTracks]);
 
-    //   Upload handler 
+    // ── Upload handler ──────────────────────────────────
+
     async function handleUpload(file: File) {
         setUploading(true);
         try {
@@ -62,9 +71,38 @@ const MixBuilder = () => {
         }
     }
 
-    //   Create mix pipeline
+    // ── Track selection helpers ─────────────────────────
+
+    const analyzedTracks = tracks.filter((t) => t.status === "analyzed");
+
+    function addTrack(trackId: string) {
+        if (!selectedTracks.includes(trackId)) {
+            setSelectedTracks([...selectedTracks, trackId]);
+        }
+    }
+
+    function removeTrack(trackId: string) {
+        setSelectedTracks(selectedTracks.filter((id) => id !== trackId));
+    }
+
+    function moveTrack(index: number, direction: "up" | "down") {
+        const newTracks = [...selectedTracks];
+        const targetIndex = direction === "up" ? index - 1 : index + 1;
+
+        if (targetIndex < 0 || targetIndex >= newTracks.length) return;
+
+        [newTracks[index], newTracks[targetIndex]] = [
+            newTracks[targetIndex],
+            newTracks[index],
+        ];
+
+        setSelectedTracks(newTracks);
+    }
+
+    // ── Create mix pipeline ─────────────────────────────
+
     async function handleCreateMix() {
-        if (!selectedA || !selectedB) return;
+        if (selectedTracks.length < 2) return;
 
         setMixStatus("creating");
         setErrorMessage(null);
@@ -74,9 +112,10 @@ const MixBuilder = () => {
             // Step 1: Create mix
             const mix = await createMix();
 
-            // Step 2: Add tracks
-            await addTrackToMix(mix.id, selectedA);
-            await addTrackToMix(mix.id, selectedB);
+            // Step 2: Add all tracks in order
+            for (const trackId of selectedTracks) {
+                await addTrackToMix(mix.id, trackId);
+            }
 
             // Step 3: Generate plan
             setMixStatus("planning");
@@ -92,14 +131,16 @@ const MixBuilder = () => {
             setMixStatus("done");
         } catch (err: any) {
             setMixStatus("error");
-            setErrorMessage(err?.response?.data?.error ?? err.message ?? "Mix failed");
+            setErrorMessage(
+                err?.response?.data?.error ?? err.message ?? "Mix failed"
+            );
         }
     }
 
     // ── Poll for render result ──────────────────────────
 
     async function pollForRenderResult(mixId: string): Promise<string> {
-        const maxAttempts = 60; // 2 minutes max
+        const maxAttempts = 120; // 4 minutes for multi-track
         let attempts = 0;
 
         while (attempts < maxAttempts) {
@@ -107,7 +148,6 @@ const MixBuilder = () => {
                 const result = await getMixAudioUrl(mixId);
                 return result.url;
             } catch {
-                // Not ready yet, wait and retry
                 attempts++;
                 await new Promise((resolve) => setTimeout(resolve, 2000));
             }
@@ -116,16 +156,13 @@ const MixBuilder = () => {
         throw new Error("Render timed out");
     }
 
-    // ── Filter analyzed tracks ──────────────────────────
-
-    const analyzedTracks = tracks.filter((t) => t.status === "analyzed");
-
+    // ── Render ──────────────────────────────────────────
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
-            {/* Upload Section */}
+            {/* Upload */}
             <section className="rounded-lg border p-6 space-y-4">
-                <h2 className="text-lg font-semibold">Upload Track</h2>
+                <h2 className="text-lg font-semibold">Upload Tracks</h2>
 
                 <input
                     type="file"
@@ -141,84 +178,155 @@ const MixBuilder = () => {
 
                 {uploading && <p className="text-sm text-gray-500">Uploading...</p>}
             </section>
-            {/* Track Selection */}
-            <section className="rounded-lg border p-6 space-y-4">
-                <h2 className="text-lg font-semibold">Select Tracks</h2>
 
-                {analyzedTracks.length < 2 && (
+            {/* Track Pool */}
+            <section className="rounded-lg border p-6 space-y-4">
+                <h2 className="text-lg font-semibold">
+                    Available Tracks ({analyzedTracks.length} analyzed)
+                </h2>
+
+                {analyzedTracks.length === 0 && (
                     <p className="text-sm text-gray-500">
-                        Need at least 2 analyzed tracks. Upload more audio files above.
+                        No analyzed tracks yet. Upload audio files above and wait for
+                        analysis to complete.
                     </p>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Track A selector */}
-                    <div>
-                        <label className="block text-sm font-medium mb-2">
-                            Track A (Outgoing)
-                        </label>
-                        <select
-                            value={selectedA ?? ""}
-                            onChange={(e) => setSelectedA(e.target.value)}
-                            className="w-full rounded border px-3 py-2 text-sm"
-                        >
-                            <option value="">Select track...</option>
-                            {analyzedTracks.map((track) => (
-                                <option key={track.id} value={track.id}>
-                                    {track.originalFileName} ({track.bpm?.toFixed(1)} BPM)
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    {/* Track B selector */}
-                    <div>
-                        <label className="block text-sm font-medium mb-2">
-                            Track B (Incoming)
-                        </label>
-                        <select
-                            value={selectedB ?? ""}
-                            onChange={(e) => setSelectedB(e.target.value)}
-                            className="w-full rounded border px-3 py-2 text-sm"
-                        >
-                            <option value="">Select track...</option>
-                            {analyzedTracks
-                                .filter((t) => t.id !== selectedA)
-                                .map((track) => (
-                                    <option key={track.id} value={track.id}>
-                                        {track.originalFileName} ({track.bpm?.toFixed(1)} BPM)
-                                    </option>
-                                ))}
-                        </select>
-                    </div>
+                <div className="space-y-2">
+                    {analyzedTracks.map((track) => {
+                        const isSelected = selectedTracks.includes(track.id);
+
+                        return (
+                            <div
+                                key={track.id}
+                                className={`flex items-center justify-between rounded border px-4 py-2 text-sm ${isSelected
+                                        ? "border-blue-400 bg-blue-50"
+                                        : "border-gray-200"
+                                    }`}
+                            >
+                                <div>
+                                    <span className="font-medium">
+                                        {track.originalFileName}
+                                    </span>
+                                    <span className="ml-2 text-gray-500">
+                                        {track.bpm?.toFixed(1)} BPM
+                                    </span>
+                                </div>
+
+                                {isSelected ? (
+                                    <button
+                                        onClick={() => removeTrack(track.id)}
+                                        className="text-red-500 hover:text-red-700 text-xs"
+                                    >
+                                        Remove
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => addTrack(track.id)}
+                                        className="text-blue-600 hover:text-blue-800 text-xs"
+                                    >
+                                        + Add to Mix
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             </section>
+
+            {/* Mix Queue */}
+            {selectedTracks.length > 0 && (
+                <section className="rounded-lg border p-6 space-y-4">
+                    <h2 className="text-lg font-semibold">
+                        Mix Queue ({selectedTracks.length} tracks)
+                    </h2>
+
+                    {selectedTracks.length < 2 && (
+                        <p className="text-sm text-yellow-600">
+                            Add at least 2 tracks to create a mix.
+                        </p>
+                    )}
+
+                    <div className="space-y-2">
+                        {selectedTracks.map((trackId, index) => {
+                            const track = analyzedTracks.find((t) => t.id === trackId);
+                            if (!track) return null;
+
+                            return (
+                                <div
+                                    key={trackId}
+                                    className="flex items-center gap-3 rounded border px-4 py-2 text-sm"
+                                >
+                                    <span className="font-mono text-gray-400 w-6">
+                                        {index + 1}
+                                    </span>
+
+                                    <div className="flex-1">
+                                        <span className="font-medium">
+                                            {track.originalFileName}
+                                        </span>
+                                        <span className="ml-2 text-gray-500">
+                                            {track.bpm?.toFixed(1)} BPM
+                                        </span>
+                                    </div>
+
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={() => moveTrack(index, "up")}
+                                            disabled={index === 0}
+                                            className="px-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                                        >
+                                            ↑
+                                        </button>
+                                        <button
+                                            onClick={() => moveTrack(index, "down")}
+                                            disabled={index === selectedTracks.length - 1}
+                                            className="px-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                                        >
+                                            ↓
+                                        </button>
+                                        <button
+                                            onClick={() => removeTrack(trackId)}
+                                            className="px-1 text-red-400 hover:text-red-600"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
             {/* Mix Button */}
             <section className="rounded-lg border p-6 space-y-4">
                 <button
                     onClick={handleCreateMix}
-                    disabled={!selectedA || !selectedB || mixStatus === "creating" || mixStatus === "planning" || mixStatus === "rendering"}
+                    disabled={
+                        selectedTracks.length < 2 ||
+                        ["creating", "planning", "rendering"].includes(mixStatus)
+                    }
                     className="w-full rounded-md bg-blue-600 px-6 py-3 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
                 >
-                    {mixStatus === "idle" && "🎧 Create AutoMix"}
+                    {mixStatus === "idle" &&
+                        `🎧 Create AutoMix (${selectedTracks.length} tracks)`}
                     {mixStatus === "creating" && "Creating mix..."}
-                    {mixStatus === "planning" && "🧠 Planning transition..."}
+                    {mixStatus === "planning" && "🧠 Planning transitions..."}
                     {mixStatus === "rendering" && "🎛️ Rendering audio..."}
                     {mixStatus === "done" && "✅ Mix Complete — Create Another"}
                     {mixStatus === "error" && "❌ Failed — Try Again"}
                 </button>
 
-<PipelineStatus status={mixStatus} />
                 {errorMessage && (
                     <p className="text-sm text-red-600 text-center">{errorMessage}</p>
                 )}
             </section>
 
-            {/* Mix Player */}
+            {/* Player */}
             {mixStatus === "done" && mixAudioUrl && (
                 <MixPlayer audioUrl={mixAudioUrl} />
             )}
         </div>
-    )
+    );
 }
-
-export default MixBuilder;
