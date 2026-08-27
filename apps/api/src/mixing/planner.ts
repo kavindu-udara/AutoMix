@@ -10,29 +10,25 @@ export interface TrackAnalysis {
 
 /**
  * Find a good entry point in a track's first ~60 seconds.
- * Looks for a downbeat that's at least 4 beats in,
- * preferring phrase boundaries (every 8 or 16 beats).
  */
 function findEntryPoint(track: TrackAnalysis): number {
   if (track.downbeats.length === 0) return 0;
 
-  // Look at downbeats in the first 60 seconds
   const candidates = track.downbeats.filter((b) => b >= 2.0 && b <= 60.0);
 
   if (candidates.length === 0) return 0;
 
-  // Prefer a downbeat that's roughly 4-8 bars in
-  // (gives the track a moment to establish rhythm before mixing)
-  const idealTime = 8 * (60 / track.bpm); // ~8 beats in
+  // Prefer a point ~8 beats in
+  const idealTime = 8 * (60 / track.bpm);
 
   let best = candidates[0];
   let bestDistance = Math.abs(candidates[0] - idealTime);
 
-  for (const candidate of candidates) {
-    const distance = Math.abs(candidate - idealTime);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
+  for (const c of candidates) {
+    const dist = Math.abs(c - idealTime);
+    if (dist < bestDistance) {
+      best = c;
+      bestDistance = dist;
     }
   }
 
@@ -40,16 +36,12 @@ function findEntryPoint(track: TrackAnalysis): number {
 }
 
 /**
- * Find a good outro start point, snapped to a downbeat.
+ * Find a downbeat at or before targetTime.
  */
-function findOutroStart(track: TrackAnalysis, targetTime: number): number {
-  const validDownbeats = track.downbeats.filter(
-    (b) => b <= targetTime && b >= 0,
-  );
-
-  if (validDownbeats.length === 0) return Math.max(0, targetTime);
-
-  return validDownbeats[validDownbeats.length - 1];
+function snapToDownbeat(track: TrackAnalysis, targetTime: number): number {
+  const valid = track.downbeats.filter((b) => b <= targetTime && b >= 0);
+  if (valid.length === 0) return Math.max(0, targetTime);
+  return valid[valid.length - 1];
 }
 
 export function createMultiTrackMixPlan(
@@ -57,12 +49,10 @@ export function createMultiTrackMixPlan(
   transitionBeats: number = 16,
 ): MixPlan {
   if (tracks.length < 2) {
-    throw new Error("Need at least 2 tracks to create a mix plan");
+    throw new Error("Need at least 2 tracks");
   }
 
   const segments: MixPlanSegment[] = [];
-
-  // Tracks how far along the master timeline we are
   let masterTime = 0;
 
   for (let i = 0; i < tracks.length; i++) {
@@ -78,77 +68,87 @@ export function createMultiTrackMixPlan(
         : "middle";
 
     // Entry point
-    // First track starts from 0.
-    // Subsequent tracks start at a matching rhythm point.
     const entryPointSec = isFirst ? 0 : findEntryPoint(track);
 
-    // Outro stretch: match THIS track to the NEXT track
-    // The outgoing track's outro is stretched to match the
-    // incoming track's BPM. This is the Apple Music approach.
+    // Transition timing
+    // The OUTGOING track's outro is stretched to match the NEXT track.
     let outroStretchRatio = 1.0;
     let transitionSeconds: number;
 
     if (nextTrack) {
-      // Stretch THIS track's outro to match the NEXT track's BPM
       outroStretchRatio = nextTrack.bpm / track.bpm;
       transitionSeconds = transitionBeats * (60 / nextTrack.bpm);
     } else {
-      // Last track: no stretching needed
       transitionSeconds = transitionBeats * (60 / track.bpm);
     }
 
-    // Calculate outro timing
-    // The tempo shift section + crossfade section happen at the end.
-    // We use transitionSeconds for the crossfade and another
-    // transitionSeconds for the gradual tempo shift.
+    // Calculate split point and fade timing
 
     let splitPointSec: number;
     let playToSec: number;
     let fadeOutStartSec: number | undefined;
     let fadeOutEndSec: number | undefined;
-
-    if (!isLast && nextTrack) {
-      // Total outro in original timeline:
-      // tempoShift portion + crossfade portion, both stretched
-      const totalOutroOriginal = transitionSeconds * 2 * outroStretchRatio;
-
-      const rawOutroStart = track.durationSec - totalOutroOriginal;
-      splitPointSec = findOutroStart(track, rawOutroStart);
-
-      // Cut the track at the end (or slightly before)
-      playToSec = track.durationSec;
-
-      // On the master timeline:
-      // Normal section: entryPointSec to splitPointSec
-      // Stretched section: splitPointSec to playToSec
-      // The stretched section duration on master timeline:
-      const stretchedDuration = (playToSec - splitPointSec) / outroStretchRatio;
-
-      // Crossfade starts after the tempo shift
-      // Tempo shift = first half of stretched section
-      // Crossfade = second half of stretched section
-      const tempoShiftMaster = stretchedDuration / 2;
-      const crossfadeMaster = stretchedDuration / 2;
-
-      fadeOutStartSec = masterTime + tempoShiftMaster;
-      fadeOutEndSec = fadeOutStartSec + crossfadeMaster;
-    } else {
-      // Last track: no outro
-      splitPointSec = track.durationSec;
-      playToSec = track.durationSec;
-    }
-
-    // Fade-in timing
     let fadeInStartSec: number | undefined;
     let fadeInEndSec: number | undefined;
 
-    if (!isFirst) {
-      fadeInStartSec = masterTime;
-      fadeInEndSec = masterTime + transitionSeconds;
+    if (!isLast && nextTrack) {
+      // This track has an outro that needs to be stretched.
+      //
+      // Timeline in the track's ORIGINAL seconds:
+      //   [entryPointSec ... splitPointSec] = normal speed
+      //   [splitPointSec ... playToSec]     = stretched to match next track
+      //
+      // The stretched section contains:
+      //   - Tempo shift portion (gradual BPM change)
+      //   - Crossfade portion (overlap with next track)
+
+      // How much original audio we need for the stretched outro:
+      // transitionSeconds of master time × stretchRatio = original seconds needed
+      // We need 2× transitionSeconds: one for tempo shift, one for crossfade
+      const outroOriginalDuration = transitionSeconds * 2 * outroStretchRatio;
+
+      const rawOutroStart = track.durationSec - outroOriginalDuration;
+      splitPointSec = snapToDownbeat(track, rawOutroStart);
+      playToSec = track.durationSec;
+
+      // Master timeline calculation
+      // Normal section plays at 1:1 speed
+      const normalDuration = splitPointSec - entryPointSec;
+
+      // Stretched section duration on master timeline
+      const stretchedOriginal = playToSec - splitPointSec;
+      const stretchedMaster = stretchedOriginal / outroStretchRatio;
+
+      // The tempo shift takes the first half, crossfade takes the second half
+      const tempoShiftMaster = stretchedMaster / 2;
+      const crossfadeMaster = stretchedMaster / 2;
+
+      // Fade-out starts after normal section + tempo shift
+      fadeOutStartSec = masterTime + normalDuration + tempoShiftMaster;
+
+      fadeOutEndSec = fadeOutStartSec + crossfadeMaster;
+
+      // Fade-in for this track (if not first)
+      if (!isFirst) {
+        fadeInStartSec = masterTime;
+        fadeInEndSec = masterTime + transitionSeconds;
+      }
+
+      // Next track enters where this track starts fading out
+      masterTime = fadeOutStartSec;
+    } else {
+      // Last track: no outro stretch, no fade-out
+      splitPointSec = track.durationSec;
+      playToSec = track.durationSec;
+
+      if (!isFirst) {
+        fadeInStartSec = masterTime;
+        fadeInEndSec = masterTime + transitionSeconds;
+      }
     }
 
-    // Build segment
-    const segment: MixPlanSegment = {
+    // Build segmen
+    segments.push({
       trackId: track.id,
       type,
       playFromSec: entryPointSec,
@@ -161,15 +161,7 @@ export function createMultiTrackMixPlan(
       fadeInEndSec,
       fadeOutStartSec,
       fadeOutEndSec,
-    };
-
-    segments.push(segment);
-
-    // Advance master time
-    if (!isLast && fadeOutStartSec !== undefined) {
-      // Next track enters where this track starts fading out
-      masterTime = fadeOutStartSec;
-    }
+    });
   }
 
   // Total duration
