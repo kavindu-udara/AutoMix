@@ -1,6 +1,6 @@
 export interface MixPlanSegment {
   trackId: string;
-  type: "outgoing" | "incoming";
+  type: "outgoing" | "incoming" | "middle";
 
   // where to start the reading from the original audio file
   playFromSec: number;
@@ -9,7 +9,10 @@ export interface MixPlanSegment {
   playToSec: number;
 
   // For incoming track: how much speed up/slow down the audio
-  stretchRatio?: number;
+  stretchRatio: number;
+
+  // Position on the master timeline (seconds)
+  masterStartSec: number;
 
   // Master timeline coordinates for the crossfade
   fadeInStartSec?: number;
