@@ -132,7 +132,6 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
       where: { id: mixId },
       data: {
         status: "planned",
-        targetBpm: plan.targetBpm,
         planJson: JSON.stringify(plan),
       },
     });
