@@ -16,30 +16,44 @@ export async function renderMixAudio(
 
   const filters: string[] = [];
 
-  // ── Build per-track filters ──────────────────────────
-
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    const inputLabel = `[${i}]`;
-    let currentLabel = `[${i}]`;
+    const isFirst = i === 0;
+    let currentLabel: string;
 
-    // 1. Trim to the play range
-    const trimLabel = `[${i}_trim]`;
-    filters.push(
-      `${currentLabel}atrim=start=${seg.playFromSec}:end=${seg.playToSec},asetpts=PTS-STARTPTS${trimLabel}`,
-    );
-    currentLabel = trimLabel;
-
-    // 2. Time-stretch (skip if ratio is ~1.0)
-    if (Math.abs(seg.stretchRatio - 1.0) > 0.001) {
-      const stretchLabel = `[${i}_stretch]`;
+    if (isFirst) {
+      // First track: no stretch, just trim
+      const trimLabel = `[${i}_trim]`;
       filters.push(
-        `${currentLabel}atempo=${seg.stretchRatio.toFixed(6)}${stretchLabel}`,
+        `[${i}]atrim=start=${seg.playFromSec}:end=${seg.playToSec},asetpts=PTS-STARTPTS${trimLabel}`,
       );
-      currentLabel = stretchLabel;
+      currentLabel = trimLabel;
+    } else {
+      // Subsequent tracks: split into intro + body
+
+      // 1. Stretched intro (beat-matched with previous track)
+      const introLabel = `[${i}_intro]`;
+      filters.push(
+        `[${i}]atrim=start=${seg.playFromSec}:end=${seg.splitPointSec},asetpts=PTS-STARTPTS,atempo=${seg.stretchRatio.toFixed(6)}${introLabel}`,
+      );
+
+      // 2. Original-speed body (natural tempo)
+      const bodyLabel = `[${i}_body]`;
+      filters.push(
+        `[${i}]atrim=start=${seg.splitPointSec}:end=${seg.playToSec},asetpts=PTS-STARTPTS${bodyLabel}`,
+      );
+
+      // 3. Crossfade between stretched intro and original body
+      // This creates a smooth tempo transition over ~2 seconds
+      const combinedLabel = `[${i}_combined]`;
+      filters.push(
+        `${introLabel}${bodyLabel}acrossfade=d=2:c1=tri:c2=tri${combinedLabel}`,
+      );
+
+      currentLabel = combinedLabel;
     }
 
-    // 3. Delay to position on master timeline
+    // Delay to position on master timeline
     if (seg.masterStartSec > 0.01) {
       const delayMs = Math.round(seg.masterStartSec * 1000);
       const delayLabel = `[${i}_delay]`;
@@ -47,7 +61,7 @@ export async function renderMixAudio(
       currentLabel = delayLabel;
     }
 
-    // 4. Apply fades
+    // Apply fades
     const fadeFilters: string[] = [];
 
     if (seg.fadeInStartSec !== undefined && seg.fadeInEndSec !== undefined) {
@@ -70,14 +84,14 @@ export async function renderMixAudio(
       currentLabel = fadeLabel;
     }
 
-    // Rename final label for amix
+    // Final label for amix
     const finalLabel = `[t${i}]`;
     if (currentLabel !== finalLabel) {
       filters.push(`${currentLabel}anull${finalLabel}`);
     }
   }
 
-  // ── Mix all tracks together ──────────────────────────
+  // Mix all tracks
 
   const inputLabels = segments.map((_, i) => `[t${i}]`).join("");
   const normalize = segments.length > 1 ? "normalize=0" : "";
@@ -88,7 +102,7 @@ export async function renderMixAudio(
 
   const filterComplex = filters.join(";");
 
-  // ── Build FFmpeg args ────────────────────────────────
+  // Build FFmpeg args
 
   const args: string[] = ["-y"];
 
