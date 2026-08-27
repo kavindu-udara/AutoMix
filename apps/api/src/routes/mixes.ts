@@ -7,11 +7,11 @@ import { storageService as storage } from "../storage";
 export const mixRoutes: FastifyPluginAsync = async (app) => {
   // 1. Create a new mix
   app.post("/api/mixes", async (req, reply) => {
-    const { name } = req.body as { name?: string };
+    const body = (req.body ?? {}) as { name?: string };
 
     const mix = await db.mix.create({
       data: {
-        name: name ?? "Untitled Mix",
+        name: body.name ?? "Untitled Mix",
       },
     });
 
