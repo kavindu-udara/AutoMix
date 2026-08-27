@@ -21,7 +21,7 @@ type MixStatus =
     | "done"
     | "error";
 
-export function MixBuilder() {
+export default function MixBuilder() {
     const [tracks, setTracks] = useState<Track[]>([]);
     const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
     const [mixStatus, setMixStatus] = useState<MixStatus>("idle");
