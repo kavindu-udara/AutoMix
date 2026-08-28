@@ -1,10 +1,10 @@
-import path from "node:path";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { db } from "../db";
-import { MixPlan } from "../mixing/types";
-import { RenderJobPayload } from "../queue/render.queue";
 import { storageService as storage } from "../storage";
 import { renderMixAudio } from "../audio/ffmpeg-renderer";
+import type { MixPlan } from "../mixing/types";
+import type { RenderJobPayload } from "../queue/render.queue";
 
 export async function renderMixProcessor(payload: RenderJobPayload) {
   const mix = await db.mix.findUnique({
@@ -22,6 +22,13 @@ export async function renderMixProcessor(payload: RenderJobPayload) {
   }
 
   const plan: MixPlan = JSON.parse(mix.planJson);
+  const mixTracks = mix.tracks;
+
+  if (mixTracks.length !== plan.segments.length) {
+    throw new Error(
+      `Track count (${mixTracks.length}) does not match plan segments (${plan.segments.length})`,
+    );
+  }
 
   await db.mix.update({
     where: { id: mix.id },
@@ -31,22 +38,24 @@ export async function renderMixProcessor(payload: RenderJobPayload) {
   const tempDir = path.resolve(process.env.TMP_DIR ?? "./tmp");
   await fs.mkdir(tempDir, { recursive: true });
 
-  const trackA = mix.tracks[0].track;
-  const trackB = mix.tracks[1].track;
-
-  const tempPathA = path.join(tempDir, `render-a-${trackA.id}.mp3`);
-  const tempPathB = path.join(tempDir, `render-b-${trackB.id}.mp3`);
-  const outputPath = path.join(tempDir, `render-out-${mix.id}.mp3`);
+  // Download all tracks
+  const tempPaths: string[] = [];
 
   try {
-    // 1. Download original tracks
-    await storage.downloadToFile(trackA.storageKey, tempPathA);
-    await storage.downloadToFile(trackB.storageKey, tempPathB);
+    for (let i = 0; i < mixTracks.length; i++) {
+      const track = mixTracks[i].track;
+      const ext = path.extname(track.storageKey) || ".mp3";
+      const tempPath = path.join(tempDir, `render-${mix.id}-${i}${ext}`);
 
-    // 2. Render the mix
-    await renderMixAudio(tempPathA, tempPathB, outputPath, plan);
+      await storage.downloadToFile(track.storageKey, tempPath);
+      tempPaths.push(tempPath);
+    }
 
-    // 3. Upload the final mix to storage
+    // Render
+    const outputPath = path.join(tempDir, `render-out-${mix.id}.mp3`);
+    await renderMixAudio(tempPaths, outputPath, plan);
+
+    // Upload result
     const outputKey = `mixes/${mix.id}.mp3`;
     await storage.saveFile({
       key: outputKey,
@@ -54,7 +63,6 @@ export async function renderMixProcessor(payload: RenderJobPayload) {
       contentType: "audio/mpeg",
     });
 
-    // 4. Update DB
     await db.mix.update({
       where: { id: mix.id },
       data: {
@@ -63,6 +71,9 @@ export async function renderMixProcessor(payload: RenderJobPayload) {
         renderError: null,
       },
     });
+
+    // Clean up output file
+    await fs.unlink(outputPath).catch(() => {});
 
     return { mixId: mix.id, outputKey };
   } catch (error) {
@@ -78,9 +89,9 @@ export async function renderMixProcessor(payload: RenderJobPayload) {
 
     throw error;
   } finally {
-    // Clean up temp files
-    await fs.unlink(tempPathA).catch(() => {});
-    await fs.unlink(tempPathB).catch(() => {});
-    await fs.unlink(outputPath).catch(() => {});
+    // Clean up all temp input files
+    for (const tempPath of tempPaths) {
+      await fs.unlink(tempPath).catch(() => {});
+    }
   }
 }
