@@ -10,6 +10,7 @@ import {
     generatePlan,
     triggerRender,
     getMixAudioUrl,
+    api,
 } from "@/lib/api";
 import MixPlayer from "./mix-player";
 import { TrackWaveform } from "./track-waveform";
@@ -29,6 +30,7 @@ export default function MixBuilder() {
     const [mixAudioUrl, setMixAudioUrl] = useState<string | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [cuePoints, setCuePoints] = useState<Record<string, { entry: number; exit: number }>>({});
 
     // ── Load tracks ─────────────────────────────────────
 
@@ -120,6 +122,10 @@ export default function MixBuilder() {
 
             // Step 3: Generate plan
             setMixStatus("planning");
+            // Send custom cue points with the plan request
+            const planResponse = await api.post(`/api/mixes/${mix.id}/plan`, {
+                cuePoints, // { trackId: { entry, exit } }
+            });
             await generatePlan(mix.id);
 
             // Step 4: Trigger render
@@ -288,9 +294,13 @@ export default function MixBuilder() {
                                     <TrackWaveform
                                         track={track}
                                         height={64}
+                                        entryPoint={cuePoints[trackId]?.entry}
+                                        exitPoint={cuePoints[trackId]?.exit}
                                         onCueChange={(entry, exit) => {
-                                            // Store custom cue points (we'll use these in the planner)
-                                            console.log(`Track ${index + 1} cues:`, { entry, exit });
+                                            setCuePoints((prev) => ({
+                                                ...prev,
+                                                [trackId]: { entry, exit },
+                                            }));
                                         }}
                                     />
                                 </div>
