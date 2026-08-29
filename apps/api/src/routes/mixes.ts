@@ -92,6 +92,11 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
   // 5. Generate the mix plan (supports N tracks)
   app.post("/api/mixes/:mixId/plan", async (req, reply) => {
     const { mixId } = req.params as { mixId: string };
+    const body = (req.body ?? {}) as {
+      cuePoints?: Record<string, { entry: number; exit: number }>;
+    };
+
+    const customCues = body.cuePoints ?? {};
 
     const mixTracks = await db.mixTrack.findMany({
       where: { mixId },
@@ -117,12 +122,16 @@ export const mixRoutes: FastifyPluginAsync = async (app) => {
     // Build analysis array for the planner
     const analyses = mixTracks.map((mt) => {
       const parsed = JSON.parse(mt.track.analysisJson!);
+      const customCue = customCues[mt.track.id];
+
       return {
         id: mt.track.id,
         durationSec: mt.track.durationSec!,
         bpm: mt.track.bpm!,
         beats: parsed.beats ?? [],
         downbeats: parsed.downbeats ?? [],
+        customEntrySec: customCue?.entry,
+        customExitSec: customCue?.exit,
       };
     });
 
