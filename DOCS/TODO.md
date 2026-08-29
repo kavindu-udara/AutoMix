@@ -16,7 +16,7 @@
 
 [x] Phase 9: Frontend Player & Waveforms.
 
-[ ] Phase 10: Multi-track mixing (chain 3+ songs)
+[x] Phase 10: Multi-track mixing (chain 3+ songs)
 
 [ ] Phase 11: Waveform beat markers & manual cue editing
 
@@ -25,3 +25,5 @@
 [ ] Phase 13: Key detection & harmonic mixing
 
 [ ] Phase 14: Stem separation (vocals/drums/bass)
+
+[ ] Phase 15: Deployment (Docker, S3, cloud rendering)
