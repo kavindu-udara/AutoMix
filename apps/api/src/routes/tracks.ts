@@ -21,11 +21,7 @@ const ALLOWED_MIME_TYPES = new Set([
   "audio/x-m4a",
 ]);
 
-const ALLOWED_EXTENSIONS = new Set([
-  ".mp3",
-  ".wav",
-  ".m4a",
-]);
+const ALLOWED_EXTENSIONS = new Set([".mp3", ".wav", ".m4a"]);
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
@@ -188,16 +184,13 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
 
     const tracksWithUrl = await Promise.all(
       tracks.map(async (track) => {
-        const url = await storage.getSignedUrl(
-          track.storageKey,
-          3600
-        );
+        const url = await storage.getSignedUrl(track.storageKey, 3600);
 
         return {
           ...track,
           url,
         };
-      })
+      }),
     );
 
     return {
@@ -260,4 +253,32 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
       track,
     };
   });
+
+  app.get("/api/tracks/:id/analysis", async (req, reply) => {
+    const params = req.params as { id: string };
+
+    const track = await db.track.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!track) {
+      return reply.code(404).send({ error: "Track not found" });
+    }
+
+    if (!track.analysisJson) {
+      return reply.code(404).send({ error: "Track not analyzed yet" });
+    }
+
+    const analysis = JSON.parse(track.analysisJson);
+
+    return {
+      trackId: track.id,
+      bpm: track.bpm,
+      durationSec: track.durationSec,
+      beats: analysis.beats ?? [],
+      downbeats: analysis.downbeats ?? [],
+      source: analysis.source ?? "unknown",
+    };
+  });
+  
 };
