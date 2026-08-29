@@ -6,21 +6,29 @@ export interface TrackAnalysis {
   bpm: number;
   beats: number[];
   downbeats: number[];
+  customEntrySec?: number;  
+  customExitSec?: number;
 }
 
 /**
  * Find a good entry point in a track's first ~60 seconds.
  */
 function findEntryPoint(track: TrackAnalysis): number {
+  // Use custom entry point if provided
+  if (track.customEntrySec !== undefined) {
+    return track.customEntrySec;
+  }
+
+  // Otherwise, auto-detect
   if (track.downbeats.length === 0) return 0;
 
-  const candidates = track.downbeats.filter((b) => b >= 2.0 && b <= 60.0);
+  const candidates = track.downbeats.filter(
+    (b) => b >= 2.0 && b <= 60.0
+  );
 
   if (candidates.length === 0) return 0;
 
-  // Prefer a point ~8 beats in
   const idealTime = 8 * (60 / track.bpm);
-
   let best = candidates[0];
   let bestDistance = Math.abs(candidates[0] - idealTime);
 
