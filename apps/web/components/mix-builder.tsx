@@ -12,6 +12,7 @@ import {
     getMixAudioUrl,
 } from "@/lib/api";
 import MixPlayer from "./mix-player";
+import { TrackWaveform } from "./track-waveform";
 
 type MixStatus =
     | "idle"
@@ -57,7 +58,7 @@ export default function MixBuilder() {
         return () => clearInterval(interval);
     }, [tracks, loadTracks]);
 
-    // ── Upload handler ──────────────────────────────────
+    // Upload handler
 
     async function handleUpload(file: File) {
         setUploading(true);
@@ -71,7 +72,7 @@ export default function MixBuilder() {
         }
     }
 
-    // ── Track selection helpers ─────────────────────────
+    // Track selection helpers 
 
     const analyzedTracks = tracks.filter((t) => t.status === "analyzed");
 
@@ -137,8 +138,7 @@ export default function MixBuilder() {
         }
     }
 
-    // ── Poll for render result ──────────────────────────
-
+    // Poll for render result
     async function pollForRenderResult(mixId: string): Promise<string> {
         const maxAttempts = 120; // 4 minutes for multi-track
         let attempts = 0;
@@ -156,7 +156,7 @@ export default function MixBuilder() {
         throw new Error("Render timed out");
     }
 
-    // ── Render ──────────────────────────────────────────
+    // Render
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
@@ -200,8 +200,8 @@ export default function MixBuilder() {
                             <div
                                 key={track.id}
                                 className={`flex items-center justify-between rounded border px-4 py-2 text-sm ${isSelected
-                                        ? "border-blue-400 bg-blue-50"
-                                        : "border-gray-200"
+                                    ? "border-blue-400 bg-blue-50"
+                                    : "border-gray-200"
                                     }`}
                             >
                                 <div>
@@ -236,7 +236,7 @@ export default function MixBuilder() {
 
             {/* Mix Queue */}
             {selectedTracks.length > 0 && (
-                <section className="rounded-lg border p-6 space-y-4">
+                <section className="rounded-lg border p-6 space-y-6">
                     <h2 className="text-lg font-semibold">
                         Mix Queue ({selectedTracks.length} tracks)
                     </h2>
@@ -247,51 +247,52 @@ export default function MixBuilder() {
                         </p>
                     )}
 
-                    <div className="space-y-2">
+                    <div className="space-y-6">
                         {selectedTracks.map((trackId, index) => {
                             const track = analyzedTracks.find((t) => t.id === trackId);
                             if (!track) return null;
 
                             return (
-                                <div
-                                    key={trackId}
-                                    className="flex items-center gap-3 rounded border px-4 py-2 text-sm"
-                                >
-                                    <span className="font-mono text-gray-400 w-6">
-                                        {index + 1}
-                                    </span>
+                                <div key={trackId} className="space-y-2">
+                                    {/* Track header with reorder controls */}
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-mono text-gray-400">
+                                            Track {index + 1}
+                                        </span>
 
-                                    <div className="flex-1">
-                                        <span className="font-medium">
-                                            {track.originalFileName}
-                                        </span>
-                                        <span className="ml-2 text-gray-500">
-                                            {track.bpm?.toFixed(1)} BPM
-                                        </span>
+                                        <div className="flex gap-1">
+                                            <button
+                                                onClick={() => moveTrack(index, "up")}
+                                                disabled={index === 0}
+                                                className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-30 rounded border"
+                                            >
+                                                ↑
+                                            </button>
+                                            <button
+                                                onClick={() => moveTrack(index, "down")}
+                                                disabled={index === selectedTracks.length - 1}
+                                                className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-30 rounded border"
+                                            >
+                                                ↓
+                                            </button>
+                                            <button
+                                                onClick={() => removeTrack(trackId)}
+                                                className="px-2 py-1 text-xs text-red-400 hover:text-red-600 rounded border"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={() => moveTrack(index, "up")}
-                                            disabled={index === 0}
-                                            className="px-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                                        >
-                                            ↑
-                                        </button>
-                                        <button
-                                            onClick={() => moveTrack(index, "down")}
-                                            disabled={index === selectedTracks.length - 1}
-                                            className="px-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                                        >
-                                            ↓
-                                        </button>
-                                        <button
-                                            onClick={() => removeTrack(trackId)}
-                                            className="px-1 text-red-400 hover:text-red-600"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
+                                    {/* Waveform with beat markers */}
+                                    <TrackWaveform
+                                        track={track}
+                                        height={64}
+                                        onCueChange={(entry, exit) => {
+                                            // Store custom cue points (we'll use these in the planner)
+                                            console.log(`Track ${index + 1} cues:`, { entry, exit });
+                                        }}
+                                    />
                                 </div>
                             );
                         })}
