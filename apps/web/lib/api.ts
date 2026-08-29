@@ -3,56 +3,56 @@ import axios from "axios";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 export const api = axios.create({
-    baseURL: API_URL,
+  baseURL: API_URL,
 });
 
-export interface Track{
-    id: string;
-    originalFileName: string;
-    storageKey: string;
-    mimeType: string;
-    sizeBytes: number;
-    durationSec: number | null;
-    status: "uploaded" | "queued" | "analyzing" | "analyzed" | "failed";
-    bpm: number | null;
-    analysisJson: string | null;
-    error: string | null;
-    createdAt: string;
-    url?: string;
+export interface Track {
+  id: string;
+  originalFileName: string;
+  storageKey: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSec: number | null;
+  status: "uploaded" | "queued" | "analyzing" | "analyzed" | "failed";
+  bpm: number | null;
+  analysisJson: string | null;
+  error: string | null;
+  createdAt: string;
+  url?: string;
 }
 
 export async function getTracks(): Promise<Track[]> {
-    const res = await api.get("/api/tracks");
-    return res.data.tracks;
+  const res = await api.get("/api/tracks");
+  return res.data.tracks;
 }
 
-export async function uploadTrack(file: File): Promise<Track>{
-    const formData = new FormData();
-    formData.append("file", file);
+export async function uploadTrack(file: File): Promise<Track> {
+  const formData = new FormData();
+  formData.append("file", file);
 
-    const res = await api.post("/api/tracks/upload", formData, {
-        headers: {
-            "Content-Type": "multipart/form-data",
-        },
-    });
+  const res = await api.post("/api/tracks/upload", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
 
-    return res.data.track;
+  return res.data.track;
 }
 
 // Mixes
 export interface Mix {
-    id: string;
-    name: string;
-    status: string;
-    targetBpm: number | null;
-    planJson: string | null;
-    outputStorageKey: string | null;
-    renderError: string | null;
-    createdAt: string;
+  id: string;
+  name: string;
+  status: string;
+  targetBpm: number | null;
+  planJson: string | null;
+  outputStorageKey: string | null;
+  renderError: string | null;
+  createdAt: string;
 }
 
 export async function createMix(): Promise<Mix> {
-const res = await api.post("/api/mixes");
+  const res = await api.post("/api/mixes");
   return res.data.mix;
 }
 
@@ -71,7 +71,25 @@ export async function triggerRender(mixId: string) {
   return res.data;
 }
 
-export async function getMixAudioUrl(mixId: string): Promise<{ url: string; status: string }> {
+export async function getMixAudioUrl(
+  mixId: string,
+): Promise<{ url: string; status: string }> {
   const res = await api.get(`/api/mixes/${mixId}/audio`);
+  return res.data;
+}
+
+export interface TrackAnalysis {
+  trackId: string;
+  bpm: number | null;
+  durationSec: number | null;
+  beats: number[];
+  downbeats: number[];
+  source: string;
+}
+
+export async function getTrackAnalysis(
+  trackId: string,
+): Promise<TrackAnalysis> {
+  const res = await api.get(`/api/tracks/${trackId}/analysis`);
   return res.data;
 }
