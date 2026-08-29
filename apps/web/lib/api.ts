@@ -61,8 +61,13 @@ export async function addTrackToMix(mixId: string, trackId: string) {
   return res.data.mixTrack;
 }
 
-export async function generatePlan(mixId: string) {
-  const res = await api.post(`/api/mixes/${mixId}/plan`);
+export async function generatePlan(
+  mixId: string,
+  cuePoints?: Record<string, { entry: number; exit: number }>,
+) {
+  const res = await api.post(`/api/mixes/${mixId}/plan`, {
+    cuePoints: cuePoints ?? {},
+  });
   return res.data;
 }
 
