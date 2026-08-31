@@ -4,11 +4,16 @@ import FormData from "form-data";
 import axios from "axios";
 
 export interface AnalyzerResult {
-    bpm: number;
-    durationSec: number;
-    beats: number[];
-    downbeats: number[];
-    source: string;
+  bpm: number;
+  durationSec: number;
+  beats: number[];
+  downbeats: number[];
+  source: string;
+  key?: string;
+  camelot?: string;
+  mode?: string;
+  pitchClass?: number;
+  keyConfidence?: number;
 }
 
 export async function analyzeAudioFile(filePath: string) : Promise<AnalyzerResult>{
