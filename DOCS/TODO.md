@@ -20,7 +20,7 @@
 
 [x] Phase 11: Waveform beat markers & manual cue editing
 
-[ ] Phase 12: Real-time Web Audio preview (no FFmpeg render needed)
+[x] Phase 12: Real-time Web Audio preview (no FFmpeg render needed)
 
 [ ] Phase 13: Key detection & harmonic mixing
 
