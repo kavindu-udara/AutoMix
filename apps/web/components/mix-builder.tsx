@@ -360,10 +360,6 @@ export default function MixBuilder() {
                 <MixPlayer audioUrl={mixAudioUrl} />
             )}
 
-            {/* Player */}
-            {mixStatus === "done" && mixAudioUrl && (
-                <MixPlayer audioUrl={mixAudioUrl} />
-            )}
         </div>
     );
 }
