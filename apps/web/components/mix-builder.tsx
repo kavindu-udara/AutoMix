@@ -19,6 +19,7 @@ import { MixPreviewPlayer } from "./mix-preview-player";
 import { PipelineStatus } from "./pipeline-status";
 import { KeyBadge } from "./key-badge";
 import { getHarmonicCompatibility, scoreHarmonicFlow } from "@/lib/harmonic";
+import { StemPlayer } from "./stem-player";
 
 type MixStatus =
     | "idle"
@@ -38,6 +39,30 @@ export default function MixBuilder() {
     const [cuePoints, setCuePoints] = useState<Record<string, { entry: number; exit: number }>>({});
     const [mixPlan, setMixPlan] = useState<MixPlan | null>(null);
     const [trackUrlMap, setTrackUrlMap] = useState<Record<string, string>>({});
+    const [stemUrls, setStemUrls] = useState<Record<string, Record<string, string>>>({});
+
+    async function triggerStems(trackId: string) {
+        try {
+            await api.post(`/api/tracks/${trackId}/stems`);
+
+            // Poll until complete
+            const poll = setInterval(async () => {
+                const res = await api.get(`/api/tracks/${trackId}/stems`);
+                if (res.data.status === "completed" && res.data.stems) {
+                    setStemUrls((prev) => ({ ...prev, [trackId]: res.data.stems }));
+                    clearInterval(poll);
+                } else if (res.data.status === "failed") {
+                    console.error("Stem separation failed:", res.data.error);
+                    clearInterval(poll);
+                }
+            }, 3000);
+
+            // Safety timeout: 10 minutes
+            setTimeout(() => clearInterval(poll), 600000);
+        } catch (err) {
+            console.error("Failed to trigger stems:", err);
+        }
+    }
 
     // Load tracks
     const loadTracks = useCallback(async () => {
@@ -318,6 +343,18 @@ export default function MixBuilder() {
                                             }));
                                         }}
                                     />
+                                    <div className="flex items-center gap-2">
+                                        {!stemUrls[trackId] ? (
+                                            <button
+                                                onClick={() => triggerStems(trackId)}
+                                                className="text-xs px-3 py-1 rounded border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                            >
+                                                🎛️ Separate Stems
+                                            </button>
+                                        ) : (
+                                            <StemPlayer trackId={trackId} stemUrls={stemUrls[trackId]} />
+                                        )}
+                                    </div>
 
                                     <div className="flex items-center justify-between px-1">
                                         <KeyBadge
