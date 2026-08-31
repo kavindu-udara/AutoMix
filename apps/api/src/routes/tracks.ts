@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { storageService as storage } from "../storage";
 import { db } from "../db";
 import { queueTrackAnalysis } from "../queue/analysis.queue";
+import { queueStemSeparation } from "../queue/stems.queue";
 
 const TMP_DIR = path.resolve(process.env.TMP_DIR ?? "./tmp");
 
@@ -296,5 +297,53 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
 
     return { message: "Re-analysis queued", trackId: params.id };
   });
-  
+
+  // Trigger stem separation
+  app.post("/api/tracks/:id/stems", async (req, reply) => {
+    const params = req.params as { id: string };
+
+    const track = await db.track.findUnique({ where: { id: params.id } });
+    if (!track) return reply.code(404).send({ error: "Track not found" });
+    if (track.status !== "analyzed") {
+      return reply.code(400).send({ error: "Track must be analyzed first" });
+    }
+
+    await db.track.update({
+      where: { id: params.id },
+      data: { stemsStatus: "pending" },
+    });
+
+    await queueStemSeparation(params.id);
+
+    return { message: "Stem separation queued", trackId: params.id };
+  });
+
+  // Get stem URLs
+  app.get("/api/tracks/:id/stems", async (req, reply) => {
+    const params = req.params as { id: string };
+
+    const track = await db.track.findUnique({ where: { id: params.id } });
+    if (!track) return reply.code(404).send({ error: "Track not found" });
+
+    if (track.stemsStatus !== "completed") {
+      return reply.code(200).send({
+        status: track.stemsStatus ?? "not_started",
+        error: track.stemsError,
+        stems: null,
+      });
+    }
+
+    const stems: Record<string, string> = {};
+
+    if (track.stemsVocalsKey)
+      stems.vocals = await storage.getSignedUrl(track.stemsVocalsKey, 3600);
+    if (track.stemsDrumsKey)
+      stems.drums = await storage.getSignedUrl(track.stemsDrumsKey, 3600);
+    if (track.stemsBassKey)
+      stems.bass = await storage.getSignedUrl(track.stemsBassKey, 3600);
+    if (track.stemsOtherKey)
+      stems.other = await storage.getSignedUrl(track.stemsOtherKey, 3600);
+
+    return { status: "completed", stems };
+  });
 };
