@@ -19,6 +19,10 @@ export interface Track {
   error: string | null;
   createdAt: string;
   url?: string;
+  musicalKey: string | null;
+  camelot: string | null;
+  keyMode: string | null;
+  keyConfidence: number | null;
 }
 
 export async function getTracks(): Promise<Track[]> {
