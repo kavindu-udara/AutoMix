@@ -3,6 +3,9 @@ import tempfile
 from fastapi import FastAPI, File, HTTPException, UploadFile
 import librosa
 import numpy as np
+import torch
+import torchaudio
+from pathlib import Path
 
 app = FastAPI(title="AutoMix Analyzer")
 
@@ -19,7 +22,6 @@ MAJOR_CAMELOT = {
 }
 
 KEY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
 
 def detect_key(y, sr):
     """
@@ -134,3 +136,97 @@ async def analyze(file: UploadFile = File(...)):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+@app.post("/separate")
+async def separate_stems(file: UploadFile = File(...)):
+    """
+    Separate audio into 4 stems: vocals, drums, bass, other.
+    Returns paths to each stem WAV file.
+    """
+    suffix = os.path.splitext(file.filename or "audio.bin")[1] or ".wav"
+    tmp_path = None
+    output_dir = None
+
+    try:
+        # Save uploaded file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+
+        # Create output directory
+        output_dir = tempfile.mkdtemp(prefix="stems_")
+
+        # Determine device
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+
+        print(f"🎵 Running Demucs on {device}...")
+
+        # Load model (htdemucs = Hybrid Transformer Demucs v4)
+        # First run downloads the model (~80MB), subsequent runs are cached
+        from demucs.pretrained import get_model
+        from demucs.apply import apply_model
+
+        model = get_model("htdemucs")
+        model.to(device)
+        model.eval()
+
+        # Load audio
+        wav, sr = torchaudio.load(tmp_path)
+
+        # Resample to model's expected rate (44100 Hz)
+        if sr != model.samplerate:
+            resampler = torchaudio.transforms.Resample(sr, model.samplerate)
+            wav = resampler(wav)
+            sr = model.samplerate
+
+        # Ensure stereo
+        if wav.shape[0] == 1:
+            wav = wav.repeat(2, 1)
+
+        # Add batch dimension: (channels, samples) → (1, channels, samples)
+        wav = wav.unsqueeze(0).to(device)
+
+        # Run separation
+        with torch.no_grad():
+            sources = apply_model(model, wav, device=device, progress=True)
+
+        # sources shape: (1, num_sources, channels, samples)
+        # htdemucs sources: drums, bass, other, vocals
+        source_names = model.sources  # ['drums', 'bass', 'other', 'vocals']
+
+        result = {}
+        for i, name in enumerate(source_names):
+            stem_wav = sources[0, i].cpu()
+            stem_path = os.path.join(output_dir, f"{name}.wav")
+            torchaudio.save(stem_path, stem_wav, sr)
+            result[name] = stem_path
+
+        print(f"✅ Stems separated: {list(result.keys())}")
+
+        return {
+            "stems": {
+                name: path
+                for name, path in result.items()
+            },
+            "sampleRate": sr,
+            "device": device,
+        }
+
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Stem separation failed: {str(err)}")
+
+    finally:
+        # Clean up input file
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        # Note: stem files are cleaned up by the worker after upload
