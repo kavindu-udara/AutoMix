@@ -18,7 +18,7 @@
 
 [x] Phase 10: Multi-track mixing (chain 3+ songs)
 
-[ ] Phase 11: Waveform beat markers & manual cue editing
+[x] Phase 11: Waveform beat markers & manual cue editing
 
 [ ] Phase 12: Real-time Web Audio preview (no FFmpeg render needed)
 
