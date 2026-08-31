@@ -14,6 +14,9 @@ import {
 } from "@/lib/api";
 import MixPlayer from "./mix-player";
 import { TrackWaveform } from "./track-waveform";
+import { MixPlan } from "@/lib/audio-engine";
+import { MixPreviewPlayer } from "./mix-preview-player";
+import { PipelineStatus } from "./pipeline-status";
 
 type MixStatus =
     | "idle"
@@ -31,9 +34,10 @@ export default function MixBuilder() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [cuePoints, setCuePoints] = useState<Record<string, { entry: number; exit: number }>>({});
+    const [mixPlan, setMixPlan] = useState<MixPlan | null>(null);
+    const [trackUrlMap, setTrackUrlMap] = useState<Record<string, string>>({});
 
-    // ── Load tracks ─────────────────────────────────────
-
+    // Load tracks
     const loadTracks = useCallback(async () => {
         try {
             const data = await getTracks();
@@ -47,8 +51,7 @@ export default function MixBuilder() {
         loadTracks();
     }, [loadTracks]);
 
-    // ── Poll for analyzed tracks ────────────────────────
-
+    // Poll for analyzed tracks
     useEffect(() => {
         const hasPending = tracks.some((t) =>
             ["uploaded", "queued", "analyzing"].includes(t.status)
@@ -61,7 +64,6 @@ export default function MixBuilder() {
     }, [tracks, loadTracks]);
 
     // Upload handler
-
     async function handleUpload(file: File) {
         setUploading(true);
         try {
@@ -75,7 +77,6 @@ export default function MixBuilder() {
     }
 
     // Track selection helpers 
-
     const analyzedTracks = tracks.filter((t) => t.status === "analyzed");
 
     function addTrack(trackId: string) {
@@ -102,8 +103,7 @@ export default function MixBuilder() {
         setSelectedTracks(newTracks);
     }
 
-    // ── Create mix pipeline ─────────────────────────────
-
+    // Create mix pipeline
     async function handleCreateMix() {
         if (selectedTracks.length < 2) return;
 
@@ -126,7 +126,20 @@ export default function MixBuilder() {
             const planResponse = await api.post(`/api/mixes/${mix.id}/plan`, {
                 cuePoints, // { trackId: { entry, exit } }
             });
-            await generatePlan(mix.id);
+
+            // Store the plan and track URLs for live preview
+            setMixPlan(planResponse.plan);
+
+            // Build track URL map from analyzed tracks
+            const urlMap: Record<string, string> = {};
+            for (const trackId of selectedTracks) {
+                const track = analyzedTracks.find((t) => t.id === trackId);
+                if (track?.url) urlMap[trackId] = track.url;
+            }
+            setTrackUrlMap(urlMap);
+
+            // await generatePlan(mix.id);
+
 
             // Step 4: Trigger render
             setMixStatus("rendering");
@@ -334,10 +347,19 @@ export default function MixBuilder() {
                 )}
             </section>
 
-            {/* Player */}
+            {/* Live Preview (instant, no render needed) */}
+            {mixPlan && Object.keys(trackUrlMap).length > 0 && (
+                <MixPreviewPlayer plan={mixPlan} trackUrls={trackUrlMap} />
+            )}
+
+            {/* Pipeline Status */}
+            <PipelineStatus status={mixStatus} />
+
+            {/* Rendered Player (FFmpeg output) */}
             {mixStatus === "done" && mixAudioUrl && (
                 <MixPlayer audioUrl={mixAudioUrl} />
             )}
+
         </div>
     );
 }
