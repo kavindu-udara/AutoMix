@@ -22,7 +22,7 @@
 
 [x] Phase 12: Real-time Web Audio preview (no FFmpeg render needed)
 
-[ ] Phase 13: Key detection & harmonic mixing
+[x] Phase 13: Key detection & harmonic mixing
 
 [ ] Phase 14: Stem separation (vocals/drums/bass)
 

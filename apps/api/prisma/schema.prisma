@@ -17,6 +17,12 @@ model Track {
   bpm              Float?
   analysisJson     String?
   error            String?
+
+  musicalKey       String?   
+  camelot          String?   
+  keyMode          String?   
+  keyConfidence    Float?  
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

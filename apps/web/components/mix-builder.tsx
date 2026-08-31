@@ -17,6 +17,8 @@ import { TrackWaveform } from "./track-waveform";
 import { MixPlan } from "@/lib/audio-engine";
 import { MixPreviewPlayer } from "./mix-preview-player";
 import { PipelineStatus } from "./pipeline-status";
+import { KeyBadge } from "./key-badge";
+import { getHarmonicCompatibility, scoreHarmonicFlow } from "@/lib/harmonic";
 
 type MixStatus =
     | "idle"
@@ -316,11 +318,66 @@ export default function MixBuilder() {
                                             }));
                                         }}
                                     />
+
+                                    <div className="flex items-center justify-between px-1">
+                                        <KeyBadge
+                                            camelot={track.camelot}
+                                            musicalKey={track.musicalKey}
+                                            confidence={track.keyConfidence}
+                                        />
+
+                                        {/* Compatibility with NEXT track */}
+                                        {index < selectedTracks.length - 1 && (() => {
+                                            const nextTrackId = selectedTracks[index + 1];
+                                            const nextTrack = analyzedTracks.find((t) => t.id === nextTrackId);
+                                            if (!nextTrack?.camelot || !track.camelot) return null;
+
+                                            const compat = getHarmonicCompatibility(track.camelot, nextTrack.camelot);
+
+                                            return (
+                                                <span className={`text-xs font-medium ${compat.color}`} title={compat.description}>
+                                                    → {compat.label}
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
                                 </div>
                             );
                         })}
                     </div>
                 </section>
+            )}
+
+            {selectedTracks.length >= 2 && (
+                <div className="rounded-lg border p-4 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Harmonic Flow</span>
+                    <div className="flex items-center gap-3">
+                        {(() => {
+                            const camelots = selectedTracks
+                                .map((id) => analyzedTracks.find((t) => t.id === id)?.camelot)
+                                .filter(Boolean) as string[];
+
+                            const score = scoreHarmonicFlow(camelots);
+
+                            const color =
+                                score >= 80 ? "text-green-600" :
+                                    score >= 50 ? "text-yellow-600" :
+                                        "text-red-600";
+
+                            const label =
+                                score >= 80 ? "Great flow" :
+                                    score >= 50 ? "Some clashes" :
+                                        "Key clashes detected";
+
+                            return (
+                                <>
+                                    <span className={`text-lg font-bold ${color}`}>{score}%</span>
+                                    <span className={`text-sm ${color}`}>{label}</span>
+                                </>
+                            );
+                        })()}
+                    </div>
+                </div>
             )}
 
             {/* Mix Button */}

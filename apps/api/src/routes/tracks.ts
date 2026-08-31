@@ -280,5 +280,21 @@ export const trackRoutes: FastifyPluginAsync = async (app) => {
       source: analysis.source ?? "unknown",
     };
   });
+
+  app.post("/api/tracks/:id/reanalyze", async (req, reply) => {
+    const params = req.params as { id: string };
+
+    const track = await db.track.findUnique({ where: { id: params.id } });
+    if (!track) return reply.code(404).send({ error: "Track not found" });
+
+    await db.track.update({
+      where: { id: params.id },
+      data: { status: "queued", error: null, updatedAt: new Date() },
+    });
+
+    await queueTrackAnalysis(params.id);
+
+    return { message: "Re-analysis queued", trackId: params.id };
+  });
   
 };

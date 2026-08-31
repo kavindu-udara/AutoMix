@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { db } from "../db";
 import { storageService as storage } from "../storage/index";
-import {analyzeAudioFile} from "../analysis/analyzer-client";
+import { analyzeAudioFile } from "../analysis/analyzer-client";
 import { runStabAnalysis } from "../analysis/stub";
 import type { AnalysisJobPayload } from "../queue/analysis.queue";
 
@@ -42,14 +42,16 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
     const analysis = await analyzeAudioFile(tempAudioPath);
 
     await db.track.update({
-      where: {
-        id: track.id,
-      },
+      where: { id: track.id },
       data: {
         status: "analyzed",
         bpm: analysis.bpm,
         durationSec: analysis.durationSec ?? track.durationSec,
         analysisJson: JSON.stringify(analysis),
+        musicalKey: analysis.key ?? null,
+        camelot: analysis.camelot ?? null,
+        keyMode: analysis.mode ?? null,
+        keyConfidence: analysis.keyConfidence ?? null,
         error: null,
         updatedAt: new Date(),
       },
@@ -59,7 +61,7 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
       trackId: track.id,
       bpm: analysis.bpm,
     };
-  } catch (error) { 
+  } catch (error) {
     console.error("analysis error:", error);
 
     await db.track.update({
@@ -68,10 +70,7 @@ export async function analyzeTrackProcessor(payload: AnalysisJobPayload) {
       },
       data: {
         status: "failed",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Analysis failed",
+        error: error instanceof Error ? error.message : "Analysis failed",
         updatedAt: new Date(),
       },
     });
