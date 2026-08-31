@@ -23,6 +23,13 @@ model Track {
   keyMode          String?   
   keyConfidence    Float?  
 
+  stemsStatus      String? 
+  stemsVocalsKey   String? 
+  stemsDrumsKey    String? 
+  stemsBassKey     String? 
+  stemsOtherKey    String? 
+  stemsError       String?
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
