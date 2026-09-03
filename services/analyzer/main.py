@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torchaudio
 from pathlib import Path
+import soundfile as sf
 
 app = FastAPI(title="AutoMix Analyzer")
 
@@ -180,18 +181,29 @@ async def separate_stems(file: UploadFile = File(...)):
         model.to(device)
         model.eval()
 
-        # Load audio
-        wav, sr = torchaudio.load(tmp_path)
+               # Load audio using librosa (no torchcodec needed)
+        y, sr = librosa.load(tmp_path, sr=None, mono=False)
+
+        # Convert numpy array to torch tensor
+        # librosa returns (samples,) for mono or (channels, samples) for stereo
+        if y.ndim == 1:
+            y = np.stack([y, y])  # mono → stereo
+
+        wav = torch.from_numpy(y).float()
 
         # Resample to model's expected rate (44100 Hz)
         if sr != model.samplerate:
-            resampler = torchaudio.transforms.Resample(sr, model.samplerate)
-            wav = resampler(wav)
+            wav = torchaudio.functional.resample(wav, sr, model.samplerate)
             sr = model.samplerate
 
-        # Ensure stereo
-        if wav.shape[0] == 1:
-            wav = wav.repeat(2, 1)
+        # Ensure exactly 2 channels
+        if wav.shape[0] > 2:
+            wav = wav[:2, :]
+
+        # Normalize
+        peak = wav.abs().max()
+        if peak > 0:
+            wav = wav / peak
 
         # Add batch dimension: (channels, samples) → (1, channels, samples)
         wav = wav.unsqueeze(0).to(device)
@@ -205,10 +217,13 @@ async def separate_stems(file: UploadFile = File(...)):
         source_names = model.sources  # ['drums', 'bass', 'other', 'vocals']
 
         result = {}
+
         for i, name in enumerate(source_names):
-            stem_wav = sources[0, i].cpu()
+            stem_wav = sources[0, i].cpu().numpy()  # Convert tensor to numpy
+            # soundfile expects (samples, channels), so transpose from (channels, samples)
+            stem_wav = stem_wav.T
             stem_path = os.path.join(output_dir, f"{name}.wav")
-            torchaudio.save(stem_path, stem_wav, sr)
+            sf.write(stem_path, stem_wav, sr)
             result[name] = stem_path
 
         print(f"✅ Stems separated: {list(result.keys())}")
@@ -222,7 +237,10 @@ async def separate_stems(file: UploadFile = File(...)):
             "device": device,
         }
 
+   
     except Exception as err:
+        import traceback
+        traceback.print_exc()  # ← ADD THIS: prints full error to terminal
         raise HTTPException(status_code=500, detail=f"Stem separation failed: {str(err)}")
 
     finally:

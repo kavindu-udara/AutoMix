@@ -1,4 +1,5 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";                    
+import fsp from "node:fs/promises";       
 import path from "node:path";
 import axios from "axios";
 import FormData from "form-data";
@@ -27,7 +28,7 @@ export async function separateStemsProcessor(payload: StemsJobPayload) {
   });
 
   const tempDir = path.resolve(process.env.TMP_DIR ?? "./tmp");
-  await fs.mkdir(tempDir, { recursive: true });
+  await fsp.mkdir(tempDir, { recursive: true });
 
   const tempInputPath = path.join(tempDir, `stems-in-${trackId}.mp3`);
   const stemTempPaths: Record<string, string> = {};
@@ -40,7 +41,7 @@ export async function separateStemsProcessor(payload: StemsJobPayload) {
     // 2. Send to Python separator
     console.log(`🎵 Sending to Demucs separator...`);
     const form = new FormData();
-    form.append("file", require("node:fs").createReadStream(tempInputPath), {
+    form.append("file", fs.createReadStream(tempInputPath), {   // ← FIXED
       filename: path.basename(tempInputPath),
     });
 
@@ -51,8 +52,8 @@ export async function separateStemsProcessor(payload: StemsJobPayload) {
         headers: form.getHeaders(),
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
-        timeout: 600000, // 10 minutes — Demucs is slow on CPU
-      },
+        timeout: 600000,
+      }
     );
 
     const stemPaths = response.data.stems;
@@ -91,6 +92,7 @@ export async function separateStemsProcessor(payload: StemsJobPayload) {
 
     console.log(`✅ Stems separated and uploaded for ${trackId}`);
     return { trackId, stems: stemKeys };
+
   } catch (error) {
     console.error("❌ Stem separation error:", error);
 
@@ -98,17 +100,16 @@ export async function separateStemsProcessor(payload: StemsJobPayload) {
       where: { id: trackId },
       data: {
         stemsStatus: "failed",
-        stemsError:
-          error instanceof Error ? error.message : "Stem separation failed",
+        stemsError: error instanceof Error ? error.message : "Stem separation failed",
       },
     });
 
     throw error;
   } finally {
     // Clean up all temp files
-    await fs.unlink(tempInputPath).catch(() => {});
+    await fsp.unlink(tempInputPath).catch(() => {});
     for (const stemPath of Object.values(stemTempPaths)) {
-      await fs.unlink(stemPath).catch(() => {});
+      await fsp.unlink(stemPath).catch(() => {});
     }
   }
 }
