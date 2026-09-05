@@ -3,3 +3,4 @@ node_modules
 apps/api/uploads
 /uploads
 TEST.md
+.DS_Store
