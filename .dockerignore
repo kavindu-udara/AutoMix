@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+*.md
+.env*
+uploads
+tmp
+.DS_Store
+*.log
+services/analyzer/.venv

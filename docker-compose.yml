@@ -1,13 +1,13 @@
-services:
+version: "3.9"
 
+services:
   postgres:
-    image: postgres:15-alpine
-    container_name: automix-postgres
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
       POSTGRES_DB: automix
+      POSTGRES_USER: automix
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-automix_dev_password}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -31,8 +31,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -45,8 +45,8 @@ services:
 
   worker:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile.worker
+      context: .
+      dockerfile: apps/api/Dockerfile.worker
     restart: unless-stopped
     env_file: .env.docker
     depends_on:
@@ -58,6 +58,7 @@ services:
   analyzer:
     build:
       context: ./services/analyzer
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -68,7 +69,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -79,9 +81,9 @@ services:
 
   migrate:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
-    command: npx prisma migrate deploy
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: sh -c "cd /app/apps/api && npx prisma migrate deploy"
     env_file: .env.docker
     depends_on:
       postgres:
@@ -89,3 +91,4 @@ services:
 
 volumes:
   pgdata:
+  
