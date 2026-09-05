@@ -19,8 +19,60 @@ export function MixPreviewPlayer({ plan, trackUrls }: MixPreviewPlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [volume, setVolume] = useState(0.8);
 
-  // ── Initialize engine and load tracks ──────────────
+  function audioBufferToWav(buffer: AudioBuffer): Blob {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const dataLength = buffer.length * blockAlign;
+    const headerLength = 44;
+    const totalLength = headerLength + dataLength;
 
+    const arrayBuffer = new ArrayBuffer(totalLength);
+    const view = new DataView(arrayBuffer);
+
+    // WAV header
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, totalLength - 8, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(view, 36, "data");
+    view.setUint32(40, dataLength, true);
+
+    // Interleave channels and write samples
+    let offset = 44;
+    const channels: Float32Array[] = [];
+    for (let i = 0; i < numChannels; i++) {
+      channels.push(buffer.getChannelData(i));
+    }
+
+    for (let i = 0; i < buffer.length; i++) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+
+    return new Blob([arrayBuffer], { type: "audio/wav" });
+  }
+
+  function writeString(view: DataView, offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  // ── Initialize engine and load tracks ──────────────
   useEffect(() => {
     const engine = new MixAudioEngine();
     engineRef.current = engine;
@@ -111,7 +163,9 @@ export function MixPreviewPlayer({ plan, trackUrls }: MixPreviewPlayerProps) {
     });
     audioBuffer.copyToChannel(channelData, 0);
 
-    ws.loadDecodedBuffer(audioBuffer);
+    // Convert AudioBuffer to WAV blob for wavesurfer v7
+    const wavBlob = audioBufferToWav(audioBuffer);
+    ws.loadBlob(wavBlob);
     wsRef.current = ws;
 
     ws.on("click", () => {

@@ -19,9 +19,9 @@ interface StemChannel {
 
 const STEM_CONFIG = [
   { name: "vocals", label: "Vocals", color: "#ec4899" },
-  { name: "drums",  label: "Drums",  color: "#f59e0b" },
-  { name: "bass",   label: "Bass",   color: "#8b5cf6" },
-  { name: "other",  label: "Other",  color: "#06b6d4" },
+  { name: "drums", label: "Drums", color: "#f59e0b" },
+  { name: "bass", label: "Bass", color: "#8b5cf6" },
+  { name: "other", label: "Other", color: "#06b6d4" },
 ];
 
 export function StemPlayer({ trackId, stemUrls }: StemPlayerProps) {
@@ -101,7 +101,7 @@ export function StemPlayer({ trackId, stemUrls }: StemPlayerProps) {
       }
     };
 
-    ws.on("seek", syncStems);
+    ws.on("interaction", syncStems);
     ws.on("audioprocess", syncStems);
   }, [channels]);
 
@@ -127,7 +127,7 @@ export function StemPlayer({ trackId, stemUrls }: StemPlayerProps) {
       ws.play();
       for (const ch of channels) {
         const audio = audioRefs.current[ch.name];
-        if (audio && !ch.muted) audio.play().catch(() => {});
+        if (audio && !ch.muted) audio.play().catch(() => { });
       }
     }
     setIsPlaying(!isPlaying);
@@ -188,11 +188,10 @@ export function StemPlayer({ trackId, stemUrls }: StemPlayerProps) {
             {/* Mute button */}
             <button
               onClick={() => toggleMute(ch.name)}
-              className={`text-xs px-2 py-1 rounded border ${
-                ch.muted
+              className={`text-xs px-2 py-1 rounded border ${ch.muted
                   ? "bg-red-50 border-red-200 text-red-600"
                   : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-              }`}
+                }`}
             >
               {ch.muted ? "MUTED" : "ON"}
             </button>
