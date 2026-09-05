@@ -150,12 +150,8 @@ export default function MixBuilder() {
             // Step 3: Generate plan
             setMixStatus("planning");
             // Send custom cue points with the plan request
-            const planResponse = await api.post(`/api/mixes/${mix.id}/plan`, {
-                cuePoints, // { trackId: { entry, exit } }
-            });
-
-            // Store the plan and track URLs for live preview
-            setMixPlan(planResponse.plan);
+            const planResponse = await generatePlan(mix.id, cuePoints);
+            setMixPlan(planResponse.data.plan);
 
             // Build track URL map from analyzed tracks
             const urlMap: Record<string, string> = {};

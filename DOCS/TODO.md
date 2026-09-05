@@ -26,4 +26,6 @@
 
 [x] Phase 14: Stem separation (vocals/drums/bass)
 
-[ ] Phase 15: Deployment (Docker, S3, cloud rendering)
+[x] Phase 15: Deployment (Docker, S3, cloud rendering)
+
+
